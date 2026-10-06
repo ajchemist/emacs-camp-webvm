@@ -1,0 +1,22 @@
+FROM --platform=linux/386 docker.io/i386/debian:trixie
+ARG DEBIAN_FRONTEND=noninteractive
+# Emacs 31.1 from source (distro Emacs is too old for forge's compat 31).
+# No native-comp: CheerpX JITs x86 already, and libgccjit adds ~200MB.
+RUN apt-get update && apt-get -y install --no-install-recommends git ca-certificates curl less \
+      build-essential pkg-config libgnutls28-dev libncurses-dev zlib1g-dev \
+ && curl -sSfL https://mirrors.kernel.org/gnu/emacs/emacs-31.1.tar.gz | tar xz -C /tmp \
+ && cd /tmp/emacs-31.1 && ./configure --without-x --without-sound --without-makeinfo --without-native-compilation \
+ && make -j"$(nproc)" && make install && cd / && rm -rf /tmp/emacs-31.1 \
+ && apt-get -y purge build-essential pkg-config && apt-get -y autoremove && rm -rf /var/lib/apt/lists/*
+RUN useradd -m user && echo "user:password" | chpasswd && echo 'root:password' | chpasswd
+USER user
+WORKDIR /home/user/
+# WebVM has no general network at runtime: install every package now.
+RUN mkdir -p .config/emacs && curl -sSfL https://github.com/ajchemist/emacs-camp/archive/refs/heads/demo.tar.gz | tar xz \
+ && cp emacs-camp-demo/lisp/*.el .config/emacs/ \
+ && emacs --batch -l emacs-camp-demo/sync.el && rm -rf emacs-camp-demo \
+ && cd .config/emacs && emacs --batch --eval '(progn (require (quote use-package)) (setq use-package-ensure-function (quote ignore)))' -f batch-byte-compile early-init.el init.el
+USER root
+RUN echo 'echo "emacs-camp demo: run  emacs"' >> /home/user/.bashrc
+ENV HOME="/home/user" TERM="xterm-256color" USER="user" SHELL="/bin/bash" EDITOR="emacs" LANG="C.UTF-8"
+CMD [ "/bin/bash" ]
